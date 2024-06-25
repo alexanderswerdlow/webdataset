@@ -125,6 +125,8 @@ def download_file(remote, local, handlers=default_cmds, verbose=False):
 
 
 def download_and_open(remote, local, mode="rb", handlers=default_cmds, verbose=False):
+    if os.path.exists(remote):
+        local = remote
     with ULockFile(local + ".lock"):
         if not os.path.exists(local):
             if verbose:

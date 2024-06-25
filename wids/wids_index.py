@@ -120,22 +120,25 @@ def main_create(args):
 
     # create the shard index
     from wids.wids_dl import download_and_open
-    from wids.wids_dl import recent_downloads
     files = []
     for fname in fnames:
         print(fname)
-        new_path = "/tmp/shard.tar"
-        downloaded = download_and_open(fname, new_path)
-        # md5sum = wids.compute_file_md5sum(downloaded)
+        if os.path.exists(fname):
+            new_path = fname
+        else:
+            new_path = "/tmp/shard.tar"
+            download_and_open(fname, new_path)
+            
+        downloaded = open(new_path, "rb")
+        md5sum = wids.compute_file_md5sum(downloaded)
         nsamples = wids.compute_num_samples(downloaded)
 
         downloaded.seek(0, os.SEEK_END)
         filesize = downloaded.tell()
         downloaded.seek(0)
-        # md5sum=md5sum,
 
         files.append(
-            dict(url=fname, nsamples=nsamples, filesize=filesize)
+            dict(url=fname, nsamples=nsamples, md5sum=md5sum, filesize=filesize)
         )
         downloaded.close()
 

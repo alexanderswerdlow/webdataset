@@ -262,7 +262,7 @@ class IndexedTarSamples:
 
     def __getitem__(self, idx):
         # Get indexes of files for the sample at index idx
-        indexes = self.samples[idx]
+        indexes = self.samples[idx % len(self.samples)]
         sample = {}
         key = None
         for i in indexes:
@@ -379,6 +379,7 @@ class LRUShards:
         self.accesses += 1
         if url not in self.lru:
             local = self.localname(url)
+            # print('getting shard', url)
             with download_and_open(url, local) as stream:
                 itf = IndexedTarSamples(path=local, stream=stream)
             self.lru[url] = itf
@@ -539,17 +540,17 @@ class ShardListDataset(Dataset[T]):
         """Return the number of cache accesses and misses."""
         return self.cache.accesses, self.cache.misses
 
-    def check_cache_misses(self):
-        """Check if the cache miss rate is too high."""
-        accesses, misses = self.get_stats()
-        if accesses > 100 and misses / accesses > 0.3:
-            # output a warning only once
-            self.check_cache_misses = lambda: None
-            print(
-                "Warning: ShardListDataset has a cache miss rate of {:.1%}%".format(
-                    misses * 100.0 / accesses
-                )
-            )
+    # def check_cache_misses(self):
+    #     """Check if the cache miss rate is too high."""
+    #     accesses, misses = self.get_stats()
+    #     if accesses > 100 and misses / accesses > 0.3:
+    #         # output a warning only once
+    #         self.check_cache_misses = lambda: None
+    #         print(
+    #             "Warning: ShardListDataset has a cache miss rate of {:.1%}%".format(
+    #                 misses * 100.0 / accesses
+    #             )
+    #         )
 
     def get_shard(self, index):
         """Get the shard and index within the shard corresponding to the given index."""
@@ -575,7 +576,7 @@ class ShardListDataset(Dataset[T]):
         sample = shard[inner_idx]
 
         # Check if we're missing the cache too often.
-        self.check_cache_misses()
+        # self.check_cache_misses()
 
         sample["__dataset__"] = desc.get("dataset")
         sample["__index__"] = index
