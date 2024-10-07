@@ -123,11 +123,11 @@ def download_file(remote, local, handlers=default_cmds, verbose=False):
                 file=sys.stderr,
             )
 
-
+from contextlib import nullcontext
 def download_and_open(remote, local, mode="rb", handlers=default_cmds, verbose=False):
     if os.path.exists(remote):
         local = remote
-    with ULockFile(local + ".lock"):
+    with nullcontext() if os.environ.get("WIDS_NO_LOCK", "0") == "1" else ULockFile(local + ".lock"):
         if not os.path.exists(local):
             if verbose:
                 print("downloading", remote, "to", local, file=sys.stderr)
