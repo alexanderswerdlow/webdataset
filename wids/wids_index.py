@@ -98,9 +98,50 @@ def shorten_name(s):
     return "-".join(result)
 
 
+import argparse
+import json
+import os
+import re
+import sys
+from urllib.parse import urlparse, urlunparse
+
+import braceexpand
+from concurrent.futures import ProcessPoolExecutor
+import tempfile  # Import tempfile module
+
+from . import wids, wids_dl
+from .wids_specs import load_remote_dsdesc_raw
+
+# (Other utility functions remain unchanged)
+import time
+def process_file(fname):
+    """
+    Process a single file: download, compute md5sum, number of samples, and filesize.
+    This function is moved to the top level to make it pickleable for multiprocessing.
+    """
+    start = time.time()
+    try:
+        # print(f"Processing: {fname}")
+        # Use a unique temporary file
+        # with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+        #     tmp_path = tmp_file.name
+        # downloaded = wids_dl.download_file(fname, tmp_path)
+        # md5sum = wids.compute_file_md5sum(downloaded)
+        nsamples = wids.compute_num_samples(fname)
+        filesize = os.stat(fname).st_size
+        # Clean up the temporary file
+        # os.remove(tmp_path)
+        end = time.time()
+        print(f"Processed {fname} in {end - start} seconds")
+        return dict(url=fname, nsamples=nsamples, filesize=filesize)
+    except Exception as e:
+        end = time.time()
+        print(f"Error processing {fname} in {end - start} seconds: {e}", file=sys.stderr)
+        return dict(url=fname, error=str(e))
+
 def main_create(args):
     """Create a full shard index for a list of files."""
-    # set default output file name
+    # Set default output file name
     if args.output is None:
         args.output = "shardindex.json"
 
@@ -109,42 +150,32 @@ def main_create(args):
         args.name = shorten_name(first)
         print("setting name to", args.name)
 
-    # read the list of files from stdin if there is only one file and it is "-"
+    # Read the list of files from stdin if there is only one file and it is "-"
     if len(args.files) == 1 and args.files[0] == "-":
         args.files = [line.strip() for line in sys.stdin]
 
-    # expand any brace expressions in the file names
+    # Expand any brace expressions in the file names
     fnames = []
     for f in args.files:
         fnames.extend(braceexpand.braceexpand(f))
 
-    # create the shard index
-    from wids.wids_dl import download_and_open
-    files = []
-    for fname in fnames:
-        print(fname)
-        if os.path.exists(fname):
-            new_path = fname
-        else:
-            new_path = "/tmp/shard.tar"
-            download_and_open(fname, new_path)
-            
-        downloaded = open(new_path, "rb")
-        md5sum = wids.compute_file_md5sum(downloaded)
-        nsamples = wids.compute_num_samples(downloaded)
+    print(f"Processing {len(fnames)} files")
 
-        downloaded.seek(0, os.SEEK_END)
-        filesize = downloaded.tell()
-        downloaded.seek(0)
+    # Process files in parallel while preserving order
+    with ProcessPoolExecutor(max_workers=6) as executor:
+        try:
+            files = list(executor.map(process_file, fnames))
+        except Exception as e:
+            print(f"An error occurred during parallel processing: {e}", file=sys.stderr)
+            sys.exit(1)
 
-        files.append(
-            dict(url=fname, nsamples=nsamples, md5sum=md5sum, filesize=filesize)
-        )
-        downloaded.close()
+    # Check for errors in the results
+    for file_info in files:
+        if 'error' in file_info:
+            print(f"Error processing {file_info['url']}: {file_info['error']}", file=sys.stderr)
+            sys.exit(1)
 
-    files = sorted(files, key=lambda x: x["url"])
-
-    # create the result dictionary
+    # Create the result dictionary
     result = dict(
         __kind__="wids-shard-index-v1",
         wids_version=1,
@@ -157,12 +188,12 @@ def main_create(args):
     if args.base is not None:
         result["base"] = args.base
 
-    # add info if it is given
+    # Add info if it is given
     if args.info is not None:
         info = open(args.info).read()
         result["info"] = info
 
-    # write the result
+    # Write the result
     with open(args.output, "w") as f:
         json.dump(result, f, indent=2)
 
